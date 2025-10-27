@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import HelpIcon from './icons/HelpIcon';
 import XIcon from './icons/XIcon';
@@ -6,6 +7,7 @@ import RadarshipIcon from './icons/RadarshipIcon';
 import RepairshipIcon from './icons/RepairshipIcon';
 import CommandshipIcon from './icons/CommandshipIcon';
 import DecoyshipIcon from './icons/DecoyshipIcon';
+import JamshipIcon from './icons/JamshipIcon';
 
 
 const HelpTab: React.FC = () => {
@@ -15,32 +17,38 @@ const HelpTab: React.FC = () => {
         {
             name: "Mothership (2 sq.)",
             icon: MothershipIcon,
-            purpose: "The command center. Click this ship to initiate an Attack. If it's sunk, you lose.",
-            skill: "No active or passive skills."
+            purpose: "The command center. If it's sunk, you lose the game.",
+            skill: "Escape (Active, 1 Use): Once your Mothership has been damaged, this skill becomes available. Using it fully repairs the Mothership and lets you move it to a new location. A powerful one-time comeback mechanic."
         },
         {
             name: "Radarship (3 sq.)",
             icon: RadarshipIcon,
             purpose: "Provides intelligence on enemy positions.",
-            skill: "Radar Scan (Active): Reveal the contents of a 2x2 area. The revealed grid information is permanent, with the scanned area highlighted for 3 seconds. Cooldown: 3 turns."
+            skill: "Radar Scan (Active): Reveal the contents of a 2x2 area. It will identify ships and decoys as contacts. The revealed information is temporary and will disappear at the end of your turn. Cooldown: 3 turns."
         },
         {
             name: "Repairship (3 sq.)",
             icon: RepairshipIcon,
             purpose: "Maintains your fleet's integrity.",
-            skill: "Repair (Active): Remove one 'hit' marker from any of your ships. Max 3 uses."
+            skill: "Repair (Active): Remove one 'hit' marker from any of your ships. Cooldown: 3 turns. Each ship can only be repaired once. If a ship is fully repaired, it becomes hidden from enemy grids again!"
+        },
+        {
+            name: "Jamship (3 sq.)",
+            icon: JamshipIcon,
+            purpose: "Disrupts enemy special systems.",
+            skill: `"Jam" (Active): Target a 3x3 area on the opponent's grid. For the opponent's next turn, any of their ships located within that zone have their active skills disabled. Cooldown: 4 turns.`
         },
         {
             name: "Commandship (5 sq.)",
             icon: CommandshipIcon,
             purpose: "Offers strategic repositioning.",
-            skill: "Relocate (Active): Move one of your UNDAMAGED ships to a new valid location. Cooldown: 5 turns."
+            skill: "Relocate (Active): Move one of your UNDAMAGED ships to a new valid location that has not been hit by enemy fire. Cooldown: 5 turns."
         },
         {
             name: "Decoyship (4 sq.)",
             icon: DecoyshipIcon,
             purpose: "This ship is a standard combat vessel that also carries decoy launchers.",
-            skill: "Deploy Decoy (Active): Place a separate, 3-square decoy on your grid. If an enemy hits the decoy, it is destroyed, and they are notified of the deception. The decoy does not count towards your main fleet. Max 2 uses."
+            skill: "Deploy Decoy (Active): Place a single decoy beacon in an empty cell. If an enemy hits the decoy, it will register as a 'HIT' on their grid before being destroyed, creating false intelligence. This leaves a ghost signal designed to make them waste shots. Max 2 uses."
         }
     ];
 
@@ -77,11 +85,17 @@ const HelpTab: React.FC = () => {
                     <div className="bg-slate-900/50 p-3 rounded-lg">
                         <h3 className="text-xl font-bold text-slate-200 mb-3">Core Combat Rules</h3>
                         <div className="space-y-2 text-sm text-slate-300">
-                            <p>
-                                <strong className="text-red-400">PERMANENT DAMAGE:</strong> The <strong className="font-bold">first hit</strong> on any ship causes permanent damage. This specific square cannot be repaired for the rest of the game!
+                             <p>
+                                <strong className="text-green-400">HIT & GO AGAIN:</strong> If your shot hits an enemy ship or a decoy, you get to take another action! However, hitting the enemy <strong>Mothership</strong> will end your turn immediately.
                             </p>
                             <p>
-                                <strong className="text-cyan-400">REPAIR TIMING:</strong> The Repairship skill <strong className="font-bold">cannot</strong> be used to fix damage that was sustained on the current turn. You must wait for your next turn to repair it.
+                                <strong className="text-cyan-400">INCOGNITO REPAIR:</strong> If you manage to fully repair a ship (remove all HIT markers), it will be removed from your opponent's grid, becoming invisible again.
+                            </p>
+                             <p>
+                                <strong className="text-red-400">ONE-TIME REPAIR:</strong> Each ship can only be repaired <strong className="font-bold">once</strong> per game, so choose your moment wisely!
+                            </p>
+                            <p>
+                                <strong className="text-orange-400">REPAIR TIMING:</strong> The Repairship skill <strong className="font-bold">cannot</strong> be used to fix damage that was sustained on the current turn. You must wait for your next turn to repair it.
                             </p>
                         </div>
                     </div>

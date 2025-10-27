@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Ship, Grid as GridType, CellState, GameMode, Player, ShipType } from '../types';
 import ShipIcon from './icons/ShipIcon';
@@ -8,6 +9,7 @@ import RadarshipIcon from './icons/RadarshipIcon';
 import RepairshipIcon from './icons/RepairshipIcon';
 import CommandshipIcon from './icons/CommandshipIcon';
 import DecoyshipIcon from './icons/DecoyshipIcon';
+import JamshipIcon from './icons/JamshipIcon';
 
 interface ShipStatusProps {
   ships: Ship[];
@@ -24,6 +26,7 @@ const ShipTypeIcon: React.FC<{ shipType: ShipType | string, className?: string }
         case 'Repairship': return <RepairshipIcon className={className} />;
         case 'Commandship': return <CommandshipIcon className={className} />;
         case 'Decoyship': return <DecoyshipIcon className={className} />;
+        case 'Jamship': return <JamshipIcon className={className} />;
         default: return <ShipIcon className={className} />; // Fallback for Classic/Score Attack
     }
 }
@@ -47,7 +50,7 @@ const ShipStatus: React.FC<ShipStatusProps> = ({ ships, grid, isOpponent = false
     const hits = ship.positions.reduce((acc, pos) => {
       if (grid && grid[pos.y] && grid[pos.y][pos.x] !== undefined) {
           const cell = grid[pos.y][pos.x];
-          if (cell === CellState.HIT || cell === CellState.SUNK || cell === CellState.PERMANENT_DAMAGE) {
+          if (cell === CellState.HIT || cell === CellState.SUNK) {
               return acc + 1;
           }
       }

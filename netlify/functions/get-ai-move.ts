@@ -99,7 +99,6 @@ const fetchTacticalAIMove = async (aiPlayer: Player, opponent: Player, gameState
     ).join('\n');
 
     const ownGridString = aiPlayer.grid.map(row => row.map(cell => {
-        if (cell === CellState.PERMANENT_DAMAGE) return 'P';
         if (cell === CellState.HIT) return 'H';
         if (cell === CellState.SUNK) return 'S';
         if (cell === CellState.MISS) return 'M';
@@ -107,16 +106,18 @@ const fetchTacticalAIMove = async (aiPlayer: Player, opponent: Player, gameState
         return '.';
     }).join(' ')).join('\n');
 
-    const shipOrder: ShipType[] = ['Mothership', 'Radarship', 'Repairship', 'Commandship', 'Decoyship'];
+    const shipOrder: ShipType[] = ['Mothership', 'Radarship', 'Repairship', 'Jamship', 'Commandship', 'Decoyship'];
     const shipStatusStrings: string[] = shipOrder.map(shipType => {
         const ship = aiPlayer.ships.find(s => s.type === shipType)!;
         const status = ship.isSunk ? 'SUNK' : (ship.isDamaged ? 'DAMAGED' : 'OPERATIONAL');
         let skillInfo = '';
         switch (shipType) {
+            case 'Mothership': skillInfo = `Escape skill is ${aiPlayer.escapeSkillUnlocked ? (aiPlayer.skillUses!.Mothership! > 0 ? 'READY' : 'USED') : 'LOCKED'}.`; break;
             case 'Radarship': skillInfo = `Radar Scan skill. Cooldown: ${aiPlayer.skillCooldowns.Radarship} turns.`; break;
-            case 'Repairship': skillInfo = `Repair skill. Uses left: ${aiPlayer.skillUses.Repairship}.`; break;
+            case 'Repairship': skillInfo = `Repair skill. Cooldown: ${aiPlayer.skillCooldowns.Repairship} turns.`; break;
             case 'Commandship': skillInfo = `Relocate skill. Cooldown: ${aiPlayer.skillCooldowns.Commandship} turns.`; break;
             case 'Decoyship': skillInfo = `Place Decoy skill. Uses left: ${aiPlayer.skillUses.Decoyship}.`; break;
+            case 'Jamship': skillInfo = `Jam skill. Cooldown: ${aiPlayer.skillCooldowns.Jamship} turns.`; break;
         }
         return `- ${ship.name}: ${status}. ${skillInfo}`;
     });
@@ -129,7 +130,7 @@ Your response must be a single, valid JSON object representing your action.
 **Turn ${gameState.turn} Intelligence Report:**
 *   **Your Fleet Status:**
 ${fleetStatusString}
-*   **Your Defensive Grid ('O' is your ship, 'P' is permanent damage):**
+*   **Your Defensive Grid ('O' is your ship):**
 \`\`\`
 ${ownGridString}
 \`\`\`
@@ -140,15 +141,19 @@ ${gridString}
 
 **Action Priority List:**
 1.  **Target Mode Attack:** If opponent grid has 'H', you MUST \`ATTACK\` a '.' cell adjacent to an 'H'.
-2.  **Mothership Emergency Repair:** If your Mothership is damaged ('H') and Repair skill is available, you MUST \`REPAIR\` a damaged Mothership coordinate.
-3.  **Hunt Mode Attack:** If no higher priority action is taken, you MUST \`ATTACK\` a '.' cell. Use a checkerboard pattern (x+y is even).
-4.  **Advanced Tactics:** Consider using skills like Radar, Relocate, or Decoy if strategically advantageous.
+2.  **Mothership Emergency Escape:** If your Mothership is DAMAGED and its Escape skill is READY, you MUST use the \`ESCAPE\` skill.
+3.  **Mothership Emergency Repair:** If your Mothership is DAMAGED and Repair skill is available (cooldown is 0 and ship has not been repaired before), you MUST \`REPAIR\` a damaged Mothership coordinate.
+4.  **Strategic Jam:** If Jam skill is available AND there are 'H's on the opponent's grid, use \`JAM\` on the area around the 'H's to prevent repair. The coordinate should be the CENTER of the 3x3 area you want to jam.
+5.  **Hunt Mode Attack:** If no higher priority action is taken, you MUST \`ATTACK\` a '.' cell. Use a checkerboard pattern (x+y is even).
+6.  **Advanced Tactics:** Consider using skills like Radar or Relocate if strategically advantageous, or Decoy to create a ghost 'HIT' signal and mislead the opponent.
 
 **JSON Output Format (Select one):**
 *   Attack: \`{"action": "ATTACK", "coords": {"x": <col>, "y": <row>}}\`
+*   Escape: \`{"action": "SKILL", "shipType": "Mothership"}\`
 *   Radar: \`{"action": "SKILL", "shipType": "Radarship", "coords": {"x": <col>, "y": <row>}}\`
 *   Repair: \`{"action": "SKILL", "shipType": "Repairship", "coords": {"x": <col>, "y": <row>}}\`
-*   Decoy: \`{"action": "SKILL", "shipType": "Decoyship", "coords": {"x": <col>, "y": <row>}, "isHorizontal": <boolean>}\`
+*   Decoy: \`{"action": "SKILL", "shipType": "Decoyship", "coords": {"x": <col>, "y": <row>}}\`
+*   Jam: \`{"action": "SKILL", "shipType": "Jamship", "coords": {"x": <col>, "y": <row>}}\`
 *   Relocate: \`{"action": "SKILL", "shipType": "Commandship", "shipToMove": "<ship_name>"}\`
 
 Analyze the situation. Choose the highest-priority valid action. Return only the JSON.

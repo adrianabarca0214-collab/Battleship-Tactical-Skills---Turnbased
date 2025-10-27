@@ -7,6 +7,7 @@ import ExitIcon from './icons/ExitIcon';
 import RotateIcon from './icons/RotateIcon';
 import UndoIcon from './icons/UndoIcon';
 import RedoIcon from './icons/RedoIcon';
+import FullscreenIcon from './icons/FullscreenIcon';
 
 interface SetupPhaseProps {
   game: GameState;
@@ -42,6 +43,32 @@ const SetupPhase: React.FC<SetupPhaseProps> = ({ game, playerToSetup, onReady, o
   const [hoveredCell, setHoveredCell] = useState<{ x: number; y: number } | null>(null);
   const [draggedShipInfo, setDraggedShipInfo] = useState<{ ship: Ship; partIndex: number; isHorizontal: boolean; } | null>(null);
   const [selectedPlacedShip, setSelectedPlacedShip] = useState<Ship | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
+
+  const toggleFullscreen = useCallback(() => {
+    if (!document.fullscreenEnabled) {
+      console.warn("Fullscreen API is not supported by this browser.");
+      return;
+    }
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(err => {
+        console.error(`Error attempting to enable full-screen mode: ${err.message} (${err.name})`);
+      });
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen();
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
+  }, []);
+
 
   useEffect(() => {
     // When the playerToSetup prop changes, reset the component's internal state
@@ -99,10 +126,11 @@ const SetupPhase: React.FC<SetupPhaseProps> = ({ game, playerToSetup, onReady, o
   }, [localPlayer, selectedShip, isHorizontal, gridDimensions, draggedShipInfo, recordHistory]);
 
   const handleReset = () => {
-      const resetPlayer = {
+      const resetPlayer: Player = {
           ...playerToSetup,
           grid: createEmptyGrid(gridDimensions.rows, gridDimensions.cols),
-          ships: game.shipsConfig.map(sc => ({...sc, positions: [], isSunk: false, isDamaged: false}))
+          // FIX: Add missing `hasBeenRepaired` property to conform to the Ship type.
+          ships: game.shipsConfig.map(sc => ({...sc, positions: [], isSunk: false, isDamaged: false, hasBeenRepaired: false}))
       };
       setHistory([resetPlayer]);
       setHistoryIndex(0);
@@ -111,10 +139,11 @@ const SetupPhase: React.FC<SetupPhaseProps> = ({ game, playerToSetup, onReady, o
   };
 
   const handleAutoPlace = () => {
-    const blankPlayer = {
+    const blankPlayer: Player = {
         ...localPlayer,
         grid: createEmptyGrid(gridDimensions.rows, gridDimensions.cols),
-        ships: game.shipsConfig.map(sc => ({...sc, positions: [], isSunk: false, isDamaged: false}))
+        // FIX: Add missing `hasBeenRepaired` property to conform to the Ship type.
+        ships: game.shipsConfig.map(sc => ({...sc, positions: [], isSunk: false, isDamaged: false, hasBeenRepaired: false}))
     };
     const playerWithPlacedShips = placeShipsForAI(blankPlayer, game.shipsConfig, gridDimensions);
     recordHistory({ ...playerWithPlacedShips, isReady: false });
@@ -272,14 +301,24 @@ const SetupPhase: React.FC<SetupPhaseProps> = ({ game, playerToSetup, onReady, o
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-slate-900 p-2 sm:p-4 fade-in relative">
-      <button 
-        onClick={handleExit} 
-        className="absolute top-4 right-4 flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-slate-200 font-semibold py-2 px-4 rounded-lg transition-colors"
-        aria-label="Exit to main menu"
-      >
-        <ExitIcon className="w-5 h-5" />
-        <span className="hidden sm:inline">Exit</span>
-      </button>
+      <div className="absolute top-4 right-4 flex items-center gap-2">
+        <button
+            onClick={toggleFullscreen}
+            className="p-3 bg-cyan-800/50 hover:bg-cyan-700/50 rounded-full text-slate-200 transition-colors"
+            aria-label={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
+        >
+            <FullscreenIcon className="w-6 h-6" isFullscreen={isFullscreen} />
+        </button>
+        <button 
+          onClick={handleExit} 
+          className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-slate-200 font-semibold py-2 px-4 rounded-lg transition-colors"
+          aria-label="Exit to main menu"
+        >
+          <ExitIcon className="w-5 h-5" />
+          <span className="hidden sm:inline">Exit</span>
+        </button>
+      </div>
+
 
       <h1 className="text-4xl sm:text-5xl font-bold text-cyan-400 mb-2 text-center">Setup Your Fleet, {playerToSetup.name}</h1>
       

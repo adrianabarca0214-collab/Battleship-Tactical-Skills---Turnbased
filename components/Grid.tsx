@@ -1,3 +1,4 @@
+
 import React, { useMemo } from 'react';
 import { CellState, Grid as GridType, Ship, GameLogEntry } from '../types';
 import ExplosionIcon from './icons/ExplosionIcon';
@@ -7,8 +8,9 @@ import RadarshipIcon from './icons/RadarshipIcon';
 import RepairshipIcon from './icons/RepairshipIcon';
 import CommandshipIcon from './icons/CommandshipIcon';
 import DecoyshipIcon from './icons/DecoyshipIcon';
+import JamshipIcon from './icons/JamshipIcon';
 import RadarContactIcon from './icons/RadarContactIcon';
-import PermanentDamageIcon from './icons/PermanentDamageIcon';
+import DecoyBeaconIcon from './icons/DecoyBeaconIcon';
 
 // This defines what information we need about each part of a ship for rendering
 interface ShipPart {
@@ -16,6 +18,20 @@ interface ShipPart {
   partIndex: number; // 0 for bow, ship.length - 1 for stern
   isHorizontal: boolean;
 }
+
+const JamEffectIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <div className={className} style={{
+    backgroundImage: `
+      repeating-linear-gradient(
+        45deg,
+        rgba(168, 85, 247, 0.4),
+        rgba(168, 85, 247, 0.4) 2px,
+        transparent 2px,
+        transparent 4px
+      )
+    `
+  }}></div>
+);
 
 interface GridProps {
   grid: GridType;
@@ -28,7 +44,8 @@ interface GridProps {
   animatedShot?: GameLogEntry | null;
   
   // Tactical Mode Props
-  radarScanCells?: {x: number, y: number}[];
+  radarOverlay?: { x: number; y: number; state: CellState }[];
+  jammedOverlay?: { x: number; y: number }[];
   activeAction?: any;
   onShipPartClick?: (ship: Ship) => void;
   isDimmed?: boolean;
@@ -53,6 +70,7 @@ const ShipTypeIcon: React.FC<{type: string, className?: string, style?: React.CS
         case 'Repairship': return <RepairshipIcon className={className} style={style} />;
         case 'Commandship': return <CommandshipIcon className={className} style={style} />;
         case 'Decoyship': return <DecoyshipIcon className={className} style={style} />;
+        case 'Jamship': return <JamshipIcon className={className} style={style} />;
         default: return null;
     }
 }
@@ -76,14 +94,15 @@ const Grid: React.FC<GridProps> = ({
     onShipClick,
     selectedShipName,
     animatedShot,
-    radarScanCells = [],
+    radarOverlay = [],
+    jammedOverlay = [],
     activeAction,
     onShipPartClick,
     isDimmed,
 }) => {
 
   const shipsToRender = useMemo(() => {
-    if (activeAction?.type === 'SKILL' && activeAction.shipType === 'Commandship' && activeAction.stage === 'PLACE_SHIP' && activeAction.shipToMove) {
+    if (activeAction?.type === 'SKILL' && (activeAction.shipType === 'Commandship' || activeAction.shipType === 'Mothership') && activeAction.stage === 'PLACE_SHIP' && activeAction.shipToMove) {
         return ships.filter(s => s.name !== activeAction.shipToMove.name);
     }
     return ships;
@@ -107,16 +126,16 @@ const Grid: React.FC<GridProps> = ({
 
   const getCellContent = (cellState: CellState, shipPart?: ShipPart) => {
     switch (cellState) {
-      case CellState.PERMANENT_DAMAGE:
-        return <PermanentDamageIcon className="w-6 h-6 text-red-400" />;
       case CellState.HIT:
-         return <ExplosionIcon className={`w-5 h-5 ${shipPart ? 'text-orange-300' : 'text-orange-400'}`} />;
+         return <ExplosionIcon className={`w-4 h-4 ${shipPart ? 'text-orange-300' : 'text-orange-400'}`} />;
       case CellState.SUNK:
-        return <ExplosionIcon className="w-6 h-6 text-red-500 animate-pulse" />;
+        return <ExplosionIcon className="w-5 h-5 text-red-500 animate-pulse" />;
       case CellState.MISS:
-        return <WaterIcon className="w-5 h-5 text-cyan-500" />;
+        return <WaterIcon className="w-4 h-4 text-cyan-500" />;
       case CellState.RADAR_CONTACT:
-        return <RadarContactIcon className="w-6 h-6 text-cyan-400 animate-pulse" />;
+        return <RadarContactIcon className="w-5 h-5 text-cyan-400 animate-pulse" />;
+      case CellState.DECOY:
+        return <DecoyBeaconIcon className="w-5 h-5 text-purple-400 animate-pulse" />;
       default:
         return null;
     }
@@ -127,7 +146,7 @@ const Grid: React.FC<GridProps> = ({
 
     if (part.ship.isSunk) {
         classes = 'absolute inset-0.5 bg-slate-800 border border-slate-700 z-0';
-    } else if (cellState === CellState.HIT || cellState === CellState.PERMANENT_DAMAGE) {
+    } else if (cellState === CellState.HIT) {
         classes = 'absolute inset-0.5 bg-gradient-to-br from-slate-700 to-slate-800 z-0';
     } else if (isSetup) {
         classes += ' cursor-grab';
@@ -163,7 +182,7 @@ const Grid: React.FC<GridProps> = ({
   };
   
   const isPlacingMode = activeAction?.type === 'SKILL' && 
-      ((activeAction.shipType === 'Commandship' && activeAction.stage === 'PLACE_SHIP') ||
+      (((activeAction.shipType === 'Commandship' || activeAction.shipType === 'Mothership') && activeAction.stage === 'PLACE_SHIP') ||
        (activeAction.shipType === 'Decoyship' && activeAction.stage === 'PLACE_DECOY'));
 
   return (
@@ -185,27 +204,38 @@ const Grid: React.FC<GridProps> = ({
               const shipPart = shipMap.get(`${x},${y}`);
               let baseClass = 'w-full h-full flex items-center justify-center border border-slate-700 transition-colors relative';
               let hoverShipPart = null;
-              const isRadarCell = radarScanCells.some(c => c.x === x && c.y === y);
               
+              const radarOverlayCell = radarOverlay.find(c => c.x === x && c.y === y);
+              const isJammed = jammedOverlay.some(c => c.x === x && c.y === y);
+              const displayCellState = radarOverlayCell ? radarOverlayCell.state : cell;
+
               let isDisabled = !onCellClick || (isSetup && cell === CellState.SHIP);
 
+              // FIX: This block is refactored to correctly handle styling and interactivity for opponent grids, especially with radar overlays.
+              // The original code had a faulty type comparison with CellState.RADAR_CONTACT on the `cell` variable.
+              // The logic now correctly distinguishes between the visual state (`displayCellState`) and the underlying grid state (`cell`).
               if (isOpponentGrid) {
-                 if (isRadarCell) {
-                    baseClass += ' bg-cyan-500/30 ring-1 ring-cyan-400';
-                 } else if (cell === CellState.RADAR_CONTACT) {
+                 if (isJammed) {
+                    baseClass += ' bg-purple-900/50';
+                 } else if (displayCellState === CellState.RADAR_CONTACT) {
                     baseClass += ' bg-cyan-900/50';
+                 } else if (radarOverlayCell) { // Is a scanned cell, but not a contact (i.e. a miss)
+                    baseClass += ' bg-cyan-500/30 ring-1 ring-cyan-400';
                  } else if (cell === CellState.HIT) {
                     baseClass += ' bg-orange-900/40';
                  } else if (cell === CellState.SUNK) {
                     baseClass += ' bg-red-900/50';
-                 } else if (onCellClick && isPlayerTurn && activeAction && (cell === CellState.EMPTY || cell === CellState.RADAR_CONTACT)) {
+                 } else if (onCellClick && isPlayerTurn && activeAction && cell === CellState.EMPTY) {
                     baseClass += ' cursor-pointer bg-slate-800 hover:bg-slate-700/70';
                  } else {
                     baseClass += ' bg-slate-800/50';
                  }
-                 isDisabled = isDisabled || !isPlayerTurn || !activeAction || (cell !== CellState.EMPTY && cell !== CellState.RADAR_CONTACT);
 
-                 if (activeAction?.type === 'SKILL' && activeAction.shipType === 'Radarship') {
+                 // A cell is disabled for attacking if it's not empty underneath. RADAR_CONTACT is an overlay on an EMPTY cell.
+                 isDisabled = isDisabled || !isPlayerTurn || !activeAction || (cell !== CellState.EMPTY);
+
+                 // Special override for some skills that can only target empty cells
+                 if (activeAction?.type === 'SKILL' && (activeAction.shipType === 'Radarship' || activeAction.shipType === 'Jamship')) {
                      isDisabled = !isPlayerTurn || !activeAction || cell !== CellState.EMPTY;
                  }
               } else if (isSetup) {
@@ -213,9 +243,6 @@ const Grid: React.FC<GridProps> = ({
               }
               else { // Own grid, in-game
                   baseClass += ' bg-slate-800/50';
-                  if (cell === CellState.PERMANENT_DAMAGE) {
-                    baseClass += ' bg-red-900/40';
-                  }
                   isDisabled = true; // By default, own grid cells aren't clickable
 
                   if (isPlayerTurn && activeAction) {
@@ -269,6 +296,8 @@ const Grid: React.FC<GridProps> = ({
                   disabled={isDisabled || isDimmed}
                   aria-label={`Cell ${headers[x]}${y + 1}, state: ${cell}`}
                 >
+                  {isJammed && <JamEffectIcon className="absolute inset-0 w-full h-full opacity-70 z-20 pointer-events-none" />}
+
                   {shipPart && (
                     <div 
                       title={shipPart.ship.name}
@@ -301,7 +330,7 @@ const Grid: React.FC<GridProps> = ({
                               zIndex: 25,
                           }}
                       >
-                          <ShipTypeIcon type={shipPart.ship.type} className="w-8 h-8 text-slate-200" style={{ filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.7))' }}/>
+                          <ShipTypeIcon type={shipPart.ship.type} className="w-6 h-6 text-slate-200" style={{ filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.7))' }}/>
                       </div>
                   )}
 
@@ -314,7 +343,7 @@ const Grid: React.FC<GridProps> = ({
                   )}
 
                   <div className="relative z-20">
-                     {getCellContent(cell, shipPart)}
+                     {getCellContent(displayCellState, shipPart)}
                   </div>
                 </button>
               </div>

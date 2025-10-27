@@ -1,3 +1,4 @@
+
 import { CellState, Grid, Player, Ship, GameState, GameLogEntry, ShipType, GamePhase } from '../types';
 
 export const HIT_SCORE = 1;
@@ -9,12 +10,13 @@ export const createEmptyGrid = (rows: number, cols: number): Grid => {
   return Array(rows).fill(null).map(() => Array(cols).fill(CellState.EMPTY));
 };
 
-export const createInitialPlayer = (id: string, name: string, isAI: boolean, shipsConfig: Omit<Ship, 'positions' | 'isSunk' | 'isDamaged'>[], gridDimensions: { rows: number; cols: number }, gameMode: 'TACTICAL' | 'CLASSIC' | 'SCORE_ATTACK'): Player => {
+export const createInitialPlayer = (id: string, name: string, isAI: boolean, shipsConfig: Omit<Ship, 'positions' | 'isSunk' | 'isDamaged' | 'hasBeenRepaired'>[], gridDimensions: { rows: number; cols: number }, gameMode: 'TACTICAL' | 'CLASSIC' | 'SCORE_ATTACK'): Player => {
   const initialShips = shipsConfig.map(shipConfig => ({
     ...shipConfig,
     positions: [],
     isSunk: false,
     isDamaged: false,
+    hasBeenRepaired: false,
   }));
 
   const player: Player = {
@@ -29,11 +31,15 @@ export const createInitialPlayer = (id: string, name: string, isAI: boolean, shi
     score: 0,
     skillCooldowns: {},
     skillUses: {},
+    decoyPositions: [],
+    jammedPositions: [],
+    jamTurnsRemaining: 0,
+    escapeSkillUnlocked: false,
   };
 
   if (gameMode === 'TACTICAL') {
-      player.skillCooldowns = { 'Radarship': 0, 'Commandship': 0 };
-      player.skillUses = { 'Repairship': 3, 'Decoyship': 2 };
+      player.skillCooldowns = { 'Radarship': 0, 'Commandship': 0, 'Repairship': 0, 'Jamship': 0 };
+      player.skillUses = { 'Decoyship': 2, 'Mothership': 1 };
   }
 
   return player;
@@ -70,7 +76,7 @@ export const placeShip = (grid: Grid, ship: Ship, x: number, y: number, isHorizo
   return { newGrid, newShip: { ...ship, positions: newPositions } };
 };
 
-const placeAllShipsRandomly = (shipsConfig: Omit<Ship, 'positions' | 'isSunk' | 'isDamaged'>[], gridDimensions: { rows: number, cols: number }): { grid: Grid, ships: Ship[] } => {
+const placeAllShipsRandomly = (shipsConfig: Omit<Ship, 'positions' | 'isSunk' | 'isDamaged' | 'hasBeenRepaired'>[], gridDimensions: { rows: number, cols: number }): { grid: Grid, ships: Ship[] } => {
     let newGrid = createEmptyGrid(gridDimensions.rows, gridDimensions.cols);
     const newShips: Ship[] = [];
 
@@ -89,7 +95,7 @@ const placeAllShipsRandomly = (shipsConfig: Omit<Ship, 'positions' | 'isSunk' | 
             const y = Math.floor(Math.random() * gridDimensions.rows);
 
             if (canPlaceShip(newGrid, shipConfig, x, y, isHorizontal, gridDimensions)) {
-                const shipToPlace: Ship = { ...shipConfig, positions: [], isSunk: false, isDamaged: false };
+                const shipToPlace: Ship = { ...shipConfig, positions: [], isSunk: false, isDamaged: false, hasBeenRepaired: false };
                 const result = placeShip(newGrid, shipToPlace, x, y, isHorizontal);
                 newGrid = result.newGrid;
                 newShips.push(result.newShip);
@@ -102,12 +108,12 @@ const placeAllShipsRandomly = (shipsConfig: Omit<Ship, 'positions' | 'isSunk' | 
     return { grid: newGrid, ships: newShips };
 };
 
-export const placeShipsForAI = (player: Player, shipsConfig: Omit<Ship, 'positions' | 'isSunk' | 'isDamaged'>[], gridDimensions: { rows: number, cols: number }): Player => {
+export const placeShipsForAI = (player: Player, shipsConfig: Omit<Ship, 'positions' | 'isSunk' | 'isDamaged' | 'hasBeenRepaired'>[], gridDimensions: { rows: number, cols: number }): Player => {
     const { grid, ships } = placeAllShipsRandomly(shipsConfig, gridDimensions);
     return { ...player, grid, ships, isReady: true };
 };
 
-export const placeShipsOnBattlefield = (shipsConfig: Omit<Ship, 'positions' | 'isSunk' | 'isDamaged'>[], gridDimensions: { rows: number, cols: number }): { battlefieldGrid: Grid, battlefieldShips: Ship[] } => {
+export const placeShipsOnBattlefield = (shipsConfig: Omit<Ship, 'positions' | 'isSunk' | 'isDamaged' | 'hasBeenRepaired'>[], gridDimensions: { rows: number, cols: number }): { battlefieldGrid: Grid, battlefieldShips: Ship[] } => {
     const { grid, ships } = placeAllShipsRandomly(shipsConfig, gridDimensions);
     return { battlefieldGrid: grid, battlefieldShips: ships };
 }
@@ -133,12 +139,27 @@ export const findRandomValidPlacement = (player: Player, ship: Ship, gridDimensi
 };
 
 export const advanceTurn = (gameState: GameState): GameState => {
-    // Cooldown reduction at the start of the next player's turn
     const currentTurnPlayer = gameState.players.find(p => p.id === gameState.currentPlayerId);
-    if (currentTurnPlayer && gameState.gameMode === 'TACTICAL') {
-        for (const shipType in currentTurnPlayer.skillCooldowns) {
-            if (currentTurnPlayer.skillCooldowns[shipType as ShipType]! > 0) {
-                currentTurnPlayer.skillCooldowns[shipType as ShipType]!--;
+    
+    if (currentTurnPlayer) {
+        // Cooldown reduction at the start of the next player's turn
+        if (gameState.gameMode === 'TACTICAL') {
+            for (const shipType in currentTurnPlayer.skillCooldowns) {
+                if (currentTurnPlayer.skillCooldowns[shipType as ShipType]! > 0) {
+                    currentTurnPlayer.skillCooldowns[shipType as ShipType]!--;
+                }
+            }
+        }
+
+        // Decrement jam duration for the player who just finished their turn
+        if (currentTurnPlayer.jamTurnsRemaining && currentTurnPlayer.jamTurnsRemaining > 0) {
+            currentTurnPlayer.jamTurnsRemaining--;
+            if (currentTurnPlayer.jamTurnsRemaining === 0) {
+                currentTurnPlayer.jammedPositions = [];
+                // Also clear the visual overlay if it belongs to this player
+                if (gameState.jammedArea?.playerId === currentTurnPlayer.id) {
+                    gameState.jammedArea = null;
+                }
             }
         }
     }
@@ -203,53 +224,53 @@ export const processShot = (gameState: GameState, targetPlayerId: string | null,
         return gameState; // Already shot here (and it was a confirmed hit/miss/sunk)
       }
 
-      actionTaken = true;
+      const decoyIndex = target.decoyPositions?.findIndex(p => p.x === x && p.y === y);
 
-      // Check for decoy hit
-      if (target.decoyShip && target.decoyShip.positions.some(p => p.x === x && p.y === y)) {
-          // Deception: Add a log entry that a ship was sunk.
+      if (decoyIndex > -1) {
+          // It's a decoy hit! Deceive the attacker.
+          attacker.shots[targetPlayerId][y][x] = CellState.HIT; // Report a HIT to the attacker
+
+          // Remove the decoy from the target's state
+          target.decoyPositions.splice(decoyIndex, 1);
+          if (target.grid[y][x] === CellState.DECOY) {
+              target.grid[y][x] = CellState.EMPTY;
+          }
+
+          // Log a generic HIT to maintain deception
           newGameState.log.unshift({
               ...baseLogEntry,
-              result: 'SUNK_SHIP',
-              sunkShipName: 'Scout Ship', // Generic name for the decoy
-              targetId: targetPlayerId,
+              result: 'HIT',
+              hitShipName: 'unidentified contact',
+              targetId: target.id,
               targetName: target.name,
           });
-
-          // Intel Correction: Mark the entire decoy area as MISS on the attacker's grid.
-          // This reveals it was a decoy after the fact, preventing ghost contacts.
-          target.decoyShip.positions.forEach(pos => {
-              attacker.shots[targetPlayerId][pos.y][pos.x] = CellState.MISS;
-          });
-          
-          // Clear the decoy from the target's grid
-          target.decoyShip.positions.forEach(pos => {
-              if (target.grid[pos.y][pos.x] === CellState.DECOY) {
-                  target.grid[pos.y][pos.x] = CellState.EMPTY;
-              }
-          });
-          target.decoyShip = undefined; // Decoy is destroyed
+          newGameState.hasActedThisTurn = false; // Player gets another action, just like a regular hit.
       } else {
           const targetCell = target.grid[y][x];
           if (targetCell === CellState.SHIP) {
               attacker.shots[targetPlayerId][y][x] = CellState.HIT;
               const hitShip = target.ships.find(ship => ship.positions.some(pos => pos.x === x && pos.y === y))!;
               
-              // Permanent Damage Rule: First hit on a ship cannot be repaired.
-              if (!hitShip.isDamaged) {
-                target.grid[y][x] = CellState.PERMANENT_DAMAGE;
-              } else {
-                target.grid[y][x] = CellState.HIT;
-              }
-
+              target.grid[y][x] = CellState.HIT;
               hitShip.isDamaged = true;
               if (!newGameState.hitLog) newGameState.hitLog = {};
               if (!newGameState.hitLog[target.id]) newGameState.hitLog[target.id] = {};
               newGameState.hitLog[target.id][`${x},${y}`] = newGameState.turn;
 
+              // HIT & GO AGAIN RULE: End turn only if Mothership is hit.
+              if (hitShip.type === 'Mothership') {
+                  newGameState.hasActedThisTurn = true;
+                  // Unlock escape skill on first damage
+                  if (!target.escapeSkillUnlocked) {
+                      target.escapeSkillUnlocked = true;
+                  }
+              } else {
+                  newGameState.hasActedThisTurn = false; // Player gets another action.
+              }
+
               const isSunk = hitShip.positions.every(pos => {
                 const cellState = newGameState.players.find(p=>p.id === target.id)!.grid[pos.y][pos.x];
-                return cellState === CellState.HIT || cellState === CellState.PERMANENT_DAMAGE;
+                return cellState === CellState.HIT;
               });
 
               if (isSunk) {
@@ -269,7 +290,6 @@ export const processShot = (gameState: GameState, targetPlayerId: string | null,
                       target.isEliminated = true;
                       newGameState.phase = 'GAME_OVER';
                       newGameState.winner = attacker.id;
-                      actionTaken = false; // Game over, no more actions
                   }
               } else {
                   newGameState.log.unshift({
@@ -280,7 +300,7 @@ export const processShot = (gameState: GameState, targetPlayerId: string | null,
                       targetName: target.name,
                   });
               }
-          } else {
+          } else { // MISS
               attacker.shots[targetPlayerId][y][x] = CellState.MISS;
               if (target.grid[y][x] !== CellState.DECOY) { // Don't overwrite decoy on target grid
                 target.grid[y][x] = CellState.MISS;
@@ -291,15 +311,14 @@ export const processShot = (gameState: GameState, targetPlayerId: string | null,
                   targetId: target.id,
                   targetName: target.name,
               });
+              newGameState.hasActedThisTurn = true; // Turn ends on miss
           }
       }
-      
-      if (actionTaken) {
-        newGameState.hasActedThisTurn = true;
-      }
-
+      return newGameState; // Return here to isolate tactical logic
+  }
+  
   // --- SCORE ATTACK MODE LOGIC ---
-  } else if (newGameState.gameMode === 'SCORE_ATTACK') {
+  else if (newGameState.gameMode === 'SCORE_ATTACK') {
     const logEntry: GameLogEntry = {
         ...baseLogEntry,
         targetName: "Battlefield",

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { GameState, GamePhase, Player, GameMode, CellState, ShipType, Ship } from './types';
 import Lobby from './components/Lobby';
@@ -40,17 +41,67 @@ const App: React.FC = () => {
 
     const logEntry = { turn: currentGameState.turn, playerId: attacker.id, playerName: attacker.name, result: 'SKILL_USED' as const, message: `${skillType} used`};
 
-    let postSkillAction = async (finalGameState: GameState) => {
-        await updateGameState(finalGameState);
-    };
-
     let actionTaken = true;
 
     switch(skillType) {
+        case 'Mothership': {
+            const { shipToMove, x, y, isHorizontal } = options;
+            if (!shipToMove) {
+                if(!isAI) showToast("Mothership not found.", "error");
+                actionTaken = false;
+                break;
+            }
+            if (attacker.skillUses!.Mothership === 0 || !attacker.escapeSkillUnlocked) {
+                if(!isAI) showToast("Escape skill is not available.", "error");
+                actionTaken = false;
+                break;
+            }
+
+            const mothership = attacker.ships.find((s: Ship) => s.type === 'Mothership')!;
+
+            // 1. Repair the ship object and grid cells
+            mothership.positions.forEach(pos => {
+                if (attacker.grid[pos.y][pos.x] === CellState.HIT) {
+                    attacker.grid[pos.y][pos.x] = CellState.SHIP;
+                }
+            });
+            mothership.isDamaged = false;
+
+            // 2. Make it invisible on opponent grids
+            currentGameState.players.forEach((player: Player) => {
+                if (player.id !== attacker.id) {
+                    const opponentShotsGrid = player.shots[attacker.id];
+                    if (opponentShotsGrid) {
+                        mothership.positions.forEach(pos => {
+                            if (opponentShotsGrid[pos.y][pos.x] === CellState.HIT || opponentShotsGrid[pos.y][pos.x] === CellState.SUNK) {
+                                opponentShotsGrid[pos.y][pos.x] = CellState.EMPTY;
+                            }
+                        });
+                    }
+                }
+            });
+
+            // 3. Relocate the ship
+            const gridWithoutShip = attacker.grid.map((row: CellState[]) => [...row]);
+            mothership.positions.forEach(pos => {
+                gridWithoutShip[pos.y][pos.x] = CellState.EMPTY;
+            });
+
+            if (canPlaceShip(gridWithoutShip, mothership, x, y, isHorizontal, game.gridDimensions)) {
+                const { newGrid, newShip } = placeShip(gridWithoutShip, mothership, x, y, isHorizontal);
+                attacker.ships = attacker.ships.map((s: Ship) => s.name === newShip.name ? newShip : s);
+                attacker.grid = newGrid;
+                attacker.skillUses!.Mothership = 0;
+                logEntry.message = `${attacker.name} used Escape! The Mothership has been repaired and relocated!`;
+            } else {
+                if (!isAI) showToast("Invalid placement for escape maneuver.", "error");
+                actionTaken = false;
+            }
+            break;
+        }
         case 'Radarship': {
             const opponent = currentGameState.players.find((p: Player) => p.id !== attacker.id)!;
             const allScannedCells = [];
-            // The clicked coordinate is the top-left of the 2x2 scan
             for (let i = 0; i <= 1; i++) {
                 for (let j = 0; j <= 1; j++) {
                     const checkX = options.x + j;
@@ -64,16 +115,19 @@ const App: React.FC = () => {
             if (!attacker.shots[opponent.id]) {
                 attacker.shots[opponent.id] = createEmptyGrid(game.gridDimensions.rows, game.gridDimensions.cols);
             }
-    
+            
+            const scanResults: { x: number, y: number, state: CellState }[] = [];
             allScannedCells.forEach(({x, y}) => {
-                const opponentCell = opponent.grid[y][x];
-                // Only update if it's unknown. Don't overwrite existing hits/misses from normal shots.
+                // Only reveal information about cells that are currently unknown.
                 if (attacker.shots[opponent.id][y][x] === CellState.EMPTY) {
+                    const opponentCell = opponent.grid[y][x];
+                    let resultState: CellState;
                     if (opponentCell === CellState.SHIP || opponentCell === CellState.DECOY) {
-                        attacker.shots[opponent.id][y][x] = CellState.RADAR_CONTACT;
+                        resultState = CellState.RADAR_CONTACT;
                     } else {
-                        attacker.shots[opponent.id][y][x] = CellState.MISS;
+                        resultState = CellState.MISS;
                     }
+                    scanResults.push({ x, y, state: resultState });
                 }
             });
             
@@ -81,20 +135,30 @@ const App: React.FC = () => {
             attacker.skillCooldowns.Radarship = cooldown;
             logEntry.message = `Radar Scan used. Cooldown set to 3 turns.`;
 
-            currentGameState.radarScanResult = { playerId: attacker.id, cells: allScannedCells };
-            
-            postSkillAction = async (finalGameState: GameState) => {
-                await updateGameState(finalGameState);
-                setTimeout(async () => {
-                    // Ref is needed for local mode to get the latest state post-update
-                    const latestGame = gameRef.current;
-                    
-                    if (latestGame && latestGame.radarScanResult) {
-                        const gameWithoutHint = { ...latestGame, radarScanResult: null };
-                        await updateGameState(gameWithoutHint);
+            currentGameState.radarScanResult = { playerId: attacker.id, results: scanResults };
+            break;
+        }
+        case 'Jamship': {
+            const opponent = currentGameState.players.find((p: Player) => p.id !== attacker.id)!;
+            const jammedCoords = [];
+            // The target point (options.x, options.y) is the CENTER of the 3x3 area
+            for (let i = -1; i <= 1; i++) {
+                for (let j = -1; j <= 1; j++) {
+                    const checkX = options.x + j;
+                    const checkY = options.y + i;
+                    if (checkX >= 0 && checkX < game.gridDimensions.cols && checkY >= 0 && checkY < game.gridDimensions.rows) {
+                        jammedCoords.push({ x: checkX, y: checkY });
                     }
-                }, 3000);
-            };
+                }
+            }
+            
+            opponent.jammedPositions = jammedCoords;
+            opponent.jamTurnsRemaining = 2;
+            currentGameState.jammedArea = { playerId: opponent.id, coords: jammedCoords };
+            
+            const cooldown = 4;
+            attacker.skillCooldowns.Jamship = cooldown;
+            logEntry.message = `${attacker.name} used Jam. Cooldown set to ${cooldown} turns.`;
             break;
         }
         case 'Repairship': {
@@ -106,9 +170,9 @@ const App: React.FC = () => {
                 actionTaken = false;
                 break;
             }
-            
-            if (cellToRepair === CellState.PERMANENT_DAMAGE) {
-                if (!isAI) showToast("This part has permanent damage and cannot be repaired.", "error");
+
+            if (repairedShip?.hasBeenRepaired) {
+                if (!isAI) showToast("This ship has already been repaired once.", "error");
                 actionTaken = false;
                 break;
             }
@@ -128,37 +192,54 @@ const App: React.FC = () => {
 
             // All conditions met, proceed with repair.
             attacker.grid[options.y][options.x] = CellState.SHIP;
-            attacker.skillUses.Repairship!--;
-            logEntry.message = `${attacker.name} repaired their ${repairedShip?.name || 'ship'}.`;
+            attacker.skillCooldowns.Repairship = 3;
+            logEntry.message = `${attacker.name} repaired their ${repairedShip?.name || 'ship'}. Cooldown: 3 turns.`;
 
             if (repairedShip) {
+                repairedShip.hasBeenRepaired = true;
+                
+                // After repairing the cell, immediately re-evaluate the ship's damaged state from the grid.
                 const isStillDamaged = repairedShip.positions.some(p => 
-                    attacker.grid[p.y][p.x] === CellState.HIT || attacker.grid[p.y][p.x] === CellState.PERMANENT_DAMAGE
+                    attacker.grid[p.y][p.x] === CellState.HIT
                 );
+
+                // Update the isDamaged flag to always be in sync with the grid state. This is the fix.
+                repairedShip.isDamaged = isStillDamaged;
+                
                 if (!isStillDamaged) {
-                    repairedShip.isDamaged = false;
+                    // This block now correctly executes only when the ship is fully repaired.
+                    logEntry.message += ` The ${repairedShip.name} is fully repaired and is now hidden from enemy sensors!`;
+                    
+                    // Make the ship invisible to opponents
+                    currentGameState.players.forEach((player: Player) => {
+                        if (player.id !== attacker.id) { // For every opponent
+                            const opponentShotsGrid = player.shots[attacker.id];
+                            if (opponentShotsGrid) {
+                                repairedShip.positions.forEach(pos => {
+                                    // Revert any HIT or SUNK markers back to EMPTY
+                                    if (opponentShotsGrid[pos.y][pos.x] === CellState.HIT || opponentShotsGrid[pos.y][pos.x] === CellState.SUNK) {
+                                        opponentShotsGrid[pos.y][pos.x] = CellState.EMPTY;
+                                    }
+                                });
+                            }
+                        }
+                    });
                 }
             }
             break;
         }
         case 'Decoyship': {
-            const { x, y, isHorizontal } = options;
-            const decoyShipConfig = { name: 'Decoy', length: 3 };
-
-            if (canPlaceShip(attacker.grid, decoyShipConfig, x, y, isHorizontal, game.gridDimensions)) {
-                const decoyToPlace: Ship = { ...decoyShipConfig, type: 'Decoyship', positions: [], isSunk: false, isDamaged: false };
-                // Use a temporary grid to place the decoy, then mark cells as DECOY type
-                const { newGrid: gridWithShip, newShip } = placeShip(attacker.grid, decoyToPlace, x, y, isHorizontal);
-                
-                newShip.positions.forEach(pos => {
-                    gridWithShip[pos.y][pos.x] = CellState.DECOY;
-                });
-
-                attacker.grid = gridWithShip;
-                attacker.decoyShip = newShip;
+            const { x, y } = options;
+            if (attacker.grid[y][x] === CellState.EMPTY) {
+                attacker.grid[y][x] = CellState.DECOY;
+                if (!attacker.decoyPositions) {
+                    attacker.decoyPositions = [];
+                }
+                attacker.decoyPositions.push({ x, y });
                 attacker.skillUses.Decoyship!--;
+                logEntry.message = `${attacker.name} deployed a decoy beacon.`;
             } else {
-                if (!isAI) showToast("Cannot place decoy there. The area is blocked or out of bounds.", "error");
+                if (!isAI) showToast("Cannot place decoy there. The cell is not empty.", "error");
                 actionTaken = false;
             }
             break;
@@ -199,7 +280,7 @@ const App: React.FC = () => {
     currentGameState.log.unshift(logEntry);
     currentGameState.hasActedThisTurn = true;
     currentGameState.activeAction = null;
-    await postSkillAction(currentGameState);
+    await updateGameState(currentGameState);
   }, [game, showToast, updateGameState]);
   
   // AI Turn Logic
@@ -236,6 +317,16 @@ const App: React.FC = () => {
                         let isValidMove = true;
                         
                         switch (move.shipType) {
+                            case 'Mothership': {
+                                const mothership = currentPlayer.ships.find(s => s.type === 'Mothership');
+                                if (mothership && currentPlayer.escapeSkillUnlocked && currentPlayer.skillUses!.Mothership! > 0) {
+                                    const placement = findRandomValidPlacement(currentPlayer, mothership, latestGameState.gridDimensions);
+                                    if (placement) {
+                                        skillOptions = { shipToMove: mothership, ...placement };
+                                    } else { isValidMove = false; }
+                                } else { isValidMove = false; }
+                                break;
+                            }
                             case 'Decoyship':
                                 if(move.coords) {
                                     skillOptions = { x: move.coords.x, y: move.coords.y, isHorizontal: !!move.isHorizontal };

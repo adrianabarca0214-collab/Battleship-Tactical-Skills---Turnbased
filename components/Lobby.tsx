@@ -1,6 +1,6 @@
-
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { GameMode } from '../types';
+import FullscreenIcon from './icons/FullscreenIcon';
 
 interface LobbyProps {
   onStartGame: (playerConfigs: { name: string; isAI: boolean }[], maxPlayers: number, gameMode: GameMode) => void;
@@ -17,6 +17,33 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame }) => {
       { name: 'Player 3', isAI: true },
       { name: 'Player 4', isAI: true },
   ]);
+
+  const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
+
+  const toggleFullscreen = useCallback(() => {
+    if (!document.fullscreenEnabled) {
+      console.warn("Fullscreen API is not supported by this browser.");
+      return;
+    }
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(err => {
+        console.error(`Error attempting to enable full-screen mode: ${err.message} (${err.name})`);
+      });
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen();
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
+  }, []);
+
 
   const handleStart = () => {
     const activePlayers = playerConfigs.slice(0, maxPlayers);
@@ -88,7 +115,15 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame }) => {
   }, [playerConfigs, maxPlayers]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-900 p-4 fade-in">
+    <div className="min-h-screen flex items-center justify-center bg-slate-900 p-4 fade-in relative">
+       <button
+        onClick={toggleFullscreen}
+        className="absolute top-4 right-4 p-3 bg-cyan-800/50 hover:bg-cyan-700/50 rounded-full text-slate-200 transition-colors"
+        aria-label={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
+      >
+        <FullscreenIcon className="w-6 h-6" isFullscreen={isFullscreen} />
+      </button>
+
       <div className="w-full max-w-lg bg-slate-800 p-6 md:p-8 rounded-xl shadow-2xl space-y-6">
         <div>
           <h1 className="text-4xl md:text-5xl font-bold text-center text-cyan-400 tracking-wider">

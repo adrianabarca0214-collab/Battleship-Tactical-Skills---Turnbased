@@ -1,6 +1,4 @@
 
-
-
 export enum GamePhase {
   LOBBY = 'LOBBY',
   SETUP = 'SETUP',
@@ -17,10 +15,9 @@ export enum CellState {
   SUNK = 'SUNK',
   DECOY = 'DECOY',
   RADAR_CONTACT = 'RADAR_CONTACT',
-  PERMANENT_DAMAGE = 'PERMANENT_DAMAGE',
 }
 
-export type ShipType = 'Mothership' | 'Radarship' | 'Repairship' | 'Commandship' | 'Decoyship';
+export type ShipType = 'Mothership' | 'Radarship' | 'Repairship' | 'Commandship' | 'Decoyship' | 'Jamship';
 
 export interface Ship {
   name: string;
@@ -29,6 +26,7 @@ export interface Ship {
   positions: { x: number; y: number }[];
   isSunk: boolean;
   isDamaged: boolean;
+  hasBeenRepaired: boolean;
 }
 
 export type Grid = CellState[][];
@@ -47,7 +45,10 @@ export interface Player {
   score: number;
   skillCooldowns: { [key in ShipType]?: number };
   skillUses: { [key in ShipType]?: number };
-  decoyShip?: Ship;
+  decoyPositions: { x: number; y: number }[];
+  jammedPositions?: { x: number; y: number }[];
+  jamTurnsRemaining?: number;
+  escapeSkillUnlocked?: boolean;
 }
 
 export interface GameLogEntry {
@@ -72,7 +73,7 @@ export interface GameState {
   maxPlayers: number;
   turn: number;
   gridDimensions: { rows: number; cols: number };
-  shipsConfig: Omit<Ship, 'positions' | 'isSunk' | 'isDamaged'>[];
+  shipsConfig: Omit<Ship, 'positions' | 'isSunk' | 'isDamaged' | 'hasBeenRepaired'>[];
   gameMode: GameMode;
   log: GameLogEntry[];
   setupPlayerIndex?: number;
@@ -85,14 +86,18 @@ export interface GameState {
   activeAction?: {
     playerId: string;
     type: 'ATTACK' | 'SKILL';
-    shipType: ShipType;
+    shipType?: ShipType;
     stage?: 'SELECT_SHIP' | 'PLACE_SHIP' | 'PLACE_DECOY';
     shipToMove?: Ship;
     isHorizontal?: boolean;
   } | null;
   radarScanResult?: {
     playerId: string;
-    cells: {x: number, y: number}[];
+    results: { x: number; y: number; state: CellState }[];
+  } | null;
+  jammedArea?: {
+    playerId: string;
+    coords: { x: number; y: number }[];
   } | null;
   hitLog?: { [playerId: string]: { [coord: string]: number } }; // coord: 'x,y', value: turn number
   lastHitTurn?: { [shipName: string]: number };

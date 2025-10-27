@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Player, ShipType, GameState } from '../types';
 import MothershipIcon from './icons/MothershipIcon';
@@ -5,17 +6,20 @@ import RadarshipIcon from './icons/RadarshipIcon';
 import RepairshipIcon from './icons/RepairshipIcon';
 import CommandshipIcon from './icons/CommandshipIcon';
 import DecoyshipIcon from './icons/DecoyshipIcon';
+import JamshipIcon from './icons/JamshipIcon';
+import TargetIcon from './icons/TargetIcon';
 
 interface ActionHubProps {
     player: Player;
     activeAction: GameState['activeAction'];
-    onActionSelect: (actionType: ShipType) => void;
+    onActionSelect: (actionType: ShipType | 'ATTACK') => void;
 }
 
-const actionConfig: { type: ShipType, name: string, Icon: React.FC<any> }[] = [
-    { type: 'Mothership', name: 'Attack', Icon: MothershipIcon },
+const skillConfig: { type: ShipType, name: string, Icon: React.FC<any> }[] = [
+    { type: 'Mothership', name: 'Escape', Icon: MothershipIcon },
     { type: 'Radarship', name: 'Radar Scan', Icon: RadarshipIcon },
     { type: 'Repairship', name: 'Repair', Icon: RepairshipIcon },
+    { type: 'Jamship', name: 'Jam', Icon: JamshipIcon },
     { type: 'Commandship', name: 'Relocate', Icon: CommandshipIcon },
     { type: 'Decoyship', name: 'Place Decoy', Icon: DecoyshipIcon },
 ];
@@ -27,6 +31,28 @@ const ActionHub: React.FC<ActionHubProps> = ({ player, activeAction, onActionSel
         if (!ship || ship.isSunk) {
             return { disabled: true, label: 'SUNK' };
         }
+
+        // Check if Jammed
+        if (player.jammedPositions && player.jammedPositions.length > 0) {
+            const isJammed = ship.positions.some(shipPos =>
+                player.jammedPositions?.some(jamPos => jamPos.x === shipPos.x && jamPos.y === shipPos.y)
+            );
+            if (isJammed) {
+                return { disabled: true, label: 'JAMMED' };
+            }
+        }
+        
+        // Mothership Escape Skill Logic
+        if (shipType === 'Mothership') {
+            if (!player.escapeSkillUnlocked) {
+                return { disabled: true, label: 'Locked' };
+            }
+            if (player.skillUses?.Mothership === 0) {
+                return { disabled: true, label: 'Used' };
+            }
+             return { disabled: false, label: 'Ready' };
+        }
+
 
         const cooldown = player.skillCooldowns[shipType];
         if (cooldown !== undefined && cooldown > 0) {
@@ -44,10 +70,28 @@ const ActionHub: React.FC<ActionHubProps> = ({ player, activeAction, onActionSel
         return { disabled: false, label: 'Ready' };
     };
 
+    const isAttackActive = activeAction?.type === 'ATTACK';
+    const attackButtonClasses = `flex flex-col items-center justify-center gap-1 p-2 rounded-lg transition-all transform w-24 h-24 text-center border-2 ${
+        isAttackActive
+            ? "bg-cyan-600 border-cyan-400 text-white scale-105 shadow-lg"
+            : "bg-slate-700 border-slate-500 text-slate-200 hover:bg-slate-600 hover:border-cyan-500 hover:-translate-y-1"
+    }`;
+
 
     return (
-        <div className="w-full max-w-screen-md bg-slate-900/50 border-2 border-slate-700 rounded-xl shadow-lg flex justify-around items-center p-3 gap-2 fade-in">
-            {actionConfig.map(({ type, name, Icon }) => {
+        <div className="w-full max-w-screen-lg bg-slate-900/50 border-2 border-slate-700 rounded-xl shadow-lg flex flex-wrap justify-center items-center p-3 gap-2 fade-in">
+            <button
+                key="attack"
+                onClick={() => onActionSelect('ATTACK')}
+                className={attackButtonClasses}
+            >
+                <TargetIcon className="w-7 h-7" />
+                <span className="text-sm font-bold leading-tight">Attack</span>
+                <span className={`text-xs font-mono px-1.5 py-0.5 rounded bg-slate-900/50`}>
+                    Ready
+                </span>
+            </button>
+            {skillConfig.map(({ type, name, Icon }) => {
                 const status = getActionStatus(type);
                 const isActive = activeAction?.shipType === type;
                 

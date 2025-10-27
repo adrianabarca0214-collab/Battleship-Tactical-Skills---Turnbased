@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { GameState, Player, GameLogEntry, Ship, ShipType, CellState, GamePhase as GamePhaseEnum } from '../types';
 import Grid from './Grid';
@@ -28,31 +29,40 @@ const ActionPanel: React.FC<{ activeAction: any, onSetActiveAction: (action: any
     let title = '';
     let description = '';
 
-    switch (activeAction.shipType) {
-        case 'Mothership':
-            title = 'Attack Mode';
-            description = "Select a target coordinate on the opponent's grid to fire.";
-            break;
-        case 'Radarship':
-            title = 'Radar Scan';
-            description = "Select the TOP-LEFT coordinate for a 2x2 radar scan.";
-            break;
-        case 'Repairship':
-            title = 'Repair Mode';
-            description = "Select a damaged part of one of your ships to repair.";
-            break;
-        case 'Commandship':
-            title = 'Relocate Command';
-            if (activeAction.stage === 'SELECT_SHIP') {
-                description = "Select one of your undamaged ships to relocate.";
-            } else if (activeAction.stage === 'PLACE_SHIP') {
-                description = `Click a new top-left cell to place your ${activeAction.shipToMove?.name}.`;
-            }
-            break;
-        case 'Decoyship':
-            title = 'Deploy Decoy';
-            description = "Select a top-left cell to place your 3-square decoy. Press 'R' to rotate.";
-            break;
+    if (activeAction.type === 'ATTACK') {
+        title = 'Attack Mode';
+        description = "Select a target coordinate on the opponent's grid to fire.";
+    } else { // It's a skill
+        switch (activeAction.shipType) {
+            case 'Mothership':
+                title = 'Escape Maneuver';
+                description = `Click a new top-left cell to relocate your repaired Mothership.`;
+                break;
+            case 'Radarship':
+                title = 'Radar Scan';
+                description = "Select the TOP-LEFT coordinate for a 2x2 radar scan.";
+                break;
+            case 'Repairship':
+                title = 'Repair Mode';
+                description = "Select a damaged part of one of your ships to repair.";
+                break;
+            case 'Commandship':
+                title = 'Relocate Command';
+                if (activeAction.stage === 'SELECT_SHIP') {
+                    description = "Select one of your undamaged ships to relocate.";
+                } else if (activeAction.stage === 'PLACE_SHIP') {
+                    description = `Click a new top-left cell to place your ${activeAction.shipToMove?.name}.`;
+                }
+                break;
+            case 'Decoyship':
+                title = 'Deploy Decoy';
+                description = "Select an empty cell to place a single decoy beacon.";
+                break;
+            case 'Jamship':
+                title = 'Signal Jam';
+                description = "Select the CENTER coordinate for a 3x3 jam area.";
+                break;
+        }
     }
 
     return (
@@ -140,20 +150,6 @@ const GamePhase: React.FC<GamePhaseProps> = ({ game, onFireShot, isAITurn, onExi
     }
   }, [game.log]);
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-        if (e.key.toLowerCase() === 'r' && activeAction?.shipType === 'Decoyship' && activeAction.stage === 'PLACE_DECOY') {
-            onSetActiveAction({ ...activeAction, isHorizontal: !activeAction.isHorizontal });
-        }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-        window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [activeAction, onSetActiveAction]);
-
-
   let statusMessage = '';
   if (isAITurn) {
       statusMessage = "AI is calculating its next move...";
@@ -182,32 +178,40 @@ const GamePhase: React.FC<GamePhaseProps> = ({ game, onFireShot, isAITurn, onExi
     }
   };
 
-  const handleActionSelect = (actionType: ShipType) => {
+  const handleActionSelect = (actionType: ShipType | 'ATTACK') => {
      if (!canTakeAction) return;
 
-    if (activeAction && activeAction.shipType === actionType) {
+    if (activeAction && (activeAction.shipType === actionType || (actionType === 'ATTACK' && activeAction.type === 'ATTACK'))) {
         onSetActiveAction(null); // Toggle off
         return;
     }
+
+    if (actionType === 'ATTACK') {
+        onSetActiveAction({ playerId: currentPlayer.id, type: 'ATTACK' });
+        return;
+    }
     
+    // It's a skill from here
     const ship = currentPlayer.ships.find(s => s.type === actionType);
     if (!ship || ship.isSunk) return;
 
-    if (actionType === 'Mothership') {
-      onSetActiveAction({ playerId: currentPlayer.id, type: 'ATTACK', shipType: 'Mothership' });
-    } else {
-      const cooldown = currentPlayer.skillCooldowns[actionType] ?? 0;
-      const uses = currentPlayer.skillUses[actionType] ?? 1;
-      if (cooldown > 0 || uses === 0) return;
+    const cooldown = currentPlayer.skillCooldowns[actionType] ?? 0;
+    const uses = currentPlayer.skillUses[actionType] ?? 1;
+    if (cooldown > 0 || uses <= 0) return;
 
-      const newAction = { playerId: currentPlayer.id, type: 'SKILL' as const, shipType: actionType };
-      if (actionType === 'Commandship') {
-          onSetActiveAction({ ...newAction, stage: 'SELECT_SHIP' });
-      } else if (actionType === 'Decoyship') {
-          onSetActiveAction({ ...newAction, stage: 'PLACE_DECOY', isHorizontal: true });
-      } else {
-          onSetActiveAction(newAction);
-      }
+    // Special check for Mothership Escape skill unlock
+    if (actionType === 'Mothership' && !currentPlayer.escapeSkillUnlocked) return;
+
+    const newAction = { playerId: currentPlayer.id, type: 'SKILL' as const, shipType: actionType };
+    if (actionType === 'Commandship') {
+        onSetActiveAction({ ...newAction, stage: 'SELECT_SHIP' });
+    } else if (actionType === 'Decoyship') {
+        onSetActiveAction({ ...newAction, stage: 'PLACE_DECOY' });
+    } else if (actionType === 'Mothership') {
+        const mothership = currentPlayer.ships.find(s => s.type === 'Mothership')!;
+        onSetActiveAction({ ...newAction, stage: 'PLACE_SHIP', shipToMove: mothership });
+    } else {
+        onSetActiveAction(newAction);
     }
   }
 
@@ -218,6 +222,8 @@ const GamePhase: React.FC<GamePhaseProps> = ({ game, onFireShot, isAITurn, onExi
       onFireShot(targetPlayerId, x, y);
     } else if (activeAction.type === 'SKILL' && activeAction.shipType === 'Radarship') {
       onUseSkill(activeAction.shipType, { x, y });
+    } else if (activeAction.type === 'SKILL' && activeAction.shipType === 'Jamship') {
+      onUseSkill(activeAction.shipType, { x, y });
     }
   }
   
@@ -226,12 +232,12 @@ const GamePhase: React.FC<GamePhaseProps> = ({ game, onFireShot, isAITurn, onExi
 
     if (activeAction.type === 'SKILL' && activeAction.shipType === 'Repairship') {
         onUseSkill('Repairship', { x, y });
-    } else if (activeAction.type === 'SKILL' && activeAction.shipType === 'Commandship' && activeAction.stage === 'PLACE_SHIP') {
+    } else if (activeAction.type === 'SKILL' && (activeAction.shipType === 'Commandship' || activeAction.shipType === 'Mothership') && activeAction.stage === 'PLACE_SHIP') {
         const shipToMove = activeAction.shipToMove!;
         const isHorizontal = shipToMove.positions.length > 1 ? shipToMove.positions[0].y === shipToMove.positions[1].y : true;
-        onUseSkill('Commandship', { shipToMove, x, y, isHorizontal });
+        onUseSkill(activeAction.shipType, { shipToMove, x, y, isHorizontal });
     } else if (activeAction.type === 'SKILL' && activeAction.shipType === 'Decoyship' && activeAction.stage === 'PLACE_DECOY') {
-        onUseSkill('Decoyship', { x, y, isHorizontal: activeAction.isHorizontal });
+        onUseSkill('Decoyship', { x, y });
     }
   };
 
@@ -252,14 +258,15 @@ const GamePhase: React.FC<GamePhaseProps> = ({ game, onFireShot, isAITurn, onExi
     let shipLength: number | undefined;
     let isHorizontal: boolean | undefined = activeAction.isHorizontal;
     
-    const isRelocating = activeAction.type === 'SKILL' && activeAction.shipType === 'Commandship' && activeAction.stage === 'PLACE_SHIP';
+    const isRelocating = activeAction.type === 'SKILL' && (activeAction.shipType === 'Commandship' || activeAction.shipType === 'Mothership') && activeAction.stage === 'PLACE_SHIP';
     const isPlacingDecoy = activeAction.type === 'SKILL' && activeAction.shipType === 'Decoyship' && activeAction.stage === 'PLACE_DECOY';
 
     if (isRelocating && activeAction.shipToMove) {
         shipLength = activeAction.shipToMove.length;
         isHorizontal = activeAction.shipToMove.positions.length > 1 ? activeAction.shipToMove.positions[0].y === activeAction.shipToMove.positions[1].y : true;
     } else if (isPlacingDecoy) {
-        shipLength = 3; // Decoy is always 3 squares
+        shipLength = 1; // Decoy is 1 square
+        isHorizontal = true;
     }
 
     if (shipLength === undefined || isHorizontal === undefined) return null;
@@ -320,10 +327,10 @@ const GamePhase: React.FC<GamePhaseProps> = ({ game, onFireShot, isAITurn, onExi
 
   const renderTacticalMode = () => {
     const opponent = game.players.find(p => p.id !== currentPlayer.id)!;
-    const playerShipsForGrid = currentPlayer.decoyShip ? [...currentPlayer.ships, currentPlayer.decoyShip] : currentPlayer.ships;
+    const playerShipsForGrid = currentPlayer.ships;
 
-    const isOpponentGridDimmed = isMyTurn && activeAction && ['Repairship', 'Decoyship', 'Commandship'].includes(activeAction.shipType);
-    const isOwnGridDimmed = isMyTurn && activeAction && ['Mothership', 'Radarship'].includes(activeAction.shipType);
+    const isOpponentGridDimmed = isMyTurn && activeAction && activeAction.type === 'SKILL' && ['Repairship', 'Decoyship', 'Commandship', 'Mothership'].includes(activeAction.shipType);
+    const isOwnGridDimmed = isMyTurn && activeAction && (activeAction.type === 'ATTACK' || (activeAction.type === 'SKILL' && ['Radarship', 'Jamship'].includes(activeAction.shipType)));
 
     return (
       <>
@@ -354,7 +361,8 @@ const GamePhase: React.FC<GamePhaseProps> = ({ game, onFireShot, isAITurn, onExi
               title={`${opponent.name}${opponent.isAI ? ' (AI)' : ''} ${opponent.isEliminated ? '- ELIMINATED' : ''}`}
               gridDimensions={game.gridDimensions}
               animatedShot={animatedShot?.targetId === opponent.id ? animatedShot : null}
-              radarScanCells={game.radarScanResult?.playerId === currentPlayer.id ? game.radarScanResult.cells : []}
+              radarOverlay={game.radarScanResult?.playerId === currentPlayer.id ? game.radarScanResult.results : []}
+              jammedOverlay={game.jammedArea?.playerId === opponent.id ? game.jammedArea.coords : []}
               activeAction={activeAction}
               isDimmed={isOpponentGridDimmed}
             />

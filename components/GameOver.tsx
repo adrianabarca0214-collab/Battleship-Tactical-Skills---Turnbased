@@ -1,6 +1,7 @@
 
-import React from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { GameState, Player } from '../types';
+import FullscreenIcon from './icons/FullscreenIcon';
 
 interface GameOverProps {
   game: GameState;
@@ -9,6 +10,32 @@ interface GameOverProps {
 
 const GameOver: React.FC<GameOverProps> = ({ game, onExitGame }) => {
   const winner = game.players.find(p => p.id === game.winner);
+  const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
+
+  const toggleFullscreen = useCallback(() => {
+    if (!document.fullscreenEnabled) {
+        console.warn("Fullscreen API is not supported by this browser.");
+        return;
+    }
+    if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(err => {
+            console.error(`Error attempting to enable full-screen mode: ${err.message} (${err.name})`);
+        });
+    } else {
+        if (document.exitFullscreen) {
+            document.exitFullscreen();
+        }
+    }
+  }, []);
+
+  useEffect(() => {
+    const onFullscreenChange = () => {
+        setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
+  }, []);
+
 
   const sortedPlayers = game.gameMode === 'SCORE_ATTACK' 
     ? [...game.players].sort((a, b) => b.score - a.score)
@@ -41,7 +68,14 @@ const GameOver: React.FC<GameOverProps> = ({ game, onExitGame }) => {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-slate-900 p-4 text-center fade-in">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-slate-900 p-4 text-center fade-in relative">
+        <button
+            onClick={toggleFullscreen}
+            className="absolute top-4 right-4 p-3 bg-cyan-800/50 hover:bg-cyan-700/50 rounded-full text-slate-200 transition-colors"
+            aria-label={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
+        >
+            <FullscreenIcon className="w-6 h-6" isFullscreen={isFullscreen} />
+        </button>
       <h1 className="text-5xl sm:text-7xl font-extrabold text-cyan-400 mb-4">
         GAME OVER
       </h1>
