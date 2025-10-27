@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { GameState, Player, GameLogEntry, Ship, ShipType, CellState, GamePhase as GamePhaseEnum } from '../types';
 import Grid from './Grid';
 import Spinner from './Spinner';
@@ -11,6 +11,7 @@ import CancelIcon from './icons/CancelIcon';
 import HelpTab from './HelpTab';
 import InfoIcon from './icons/InfoIcon';
 import ActionHub from './ActionHub';
+import FullscreenIcon from './icons/FullscreenIcon';
 
 interface GamePhaseProps {
   game: GameState;
@@ -89,6 +90,32 @@ const TurnTransition: React.FC<{ nextPlayerName: string; onConfirm: () => void }
 );
 
 const GamePhase: React.FC<GamePhaseProps> = ({ game, onFireShot, isAITurn, onExitGame, onSetActiveAction, onUseSkill, onConfirmTransition, onEndTurn }) => {
+  const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
+
+  const toggleFullscreen = useCallback(() => {
+    if (!document.fullscreenEnabled) {
+      console.warn("Fullscreen API is not supported by this browser.");
+      return;
+    }
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(err => {
+        console.error(`Error attempting to enable full-screen mode: ${err.message} (${err.name})`);
+      });
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen();
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
+  }, []);
+
   const turnPlayer = game.players.find(p => p.id === game.currentPlayerId);
   if (!turnPlayer) return null; // Should not happen
 
@@ -390,6 +417,13 @@ const GamePhase: React.FC<GamePhaseProps> = ({ game, onFireShot, isAITurn, onExi
                         </div>
                     </div>
                     <GameLog log={game.log} players={game.players} currentUserId={currentPlayer.id} gameMode={game.gameMode} />
+                    <button
+                        onClick={toggleFullscreen}
+                        className="p-3 bg-cyan-800/50 hover:bg-cyan-700/50 rounded-full text-slate-200 transition-colors"
+                        aria-label={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
+                    >
+                        <FullscreenIcon className="w-6 h-6" isFullscreen={isFullscreen} />
+                    </button>
                     <button 
                         onClick={handleExit} 
                         className="p-3 bg-red-800/50 hover:bg-red-700/50 rounded-full text-slate-200 transition-colors"
