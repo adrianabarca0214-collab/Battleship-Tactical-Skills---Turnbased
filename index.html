@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gemini Battleship: Fleet Command</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Teko:wght@400;700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+      body {
+        background-color: #0f172a; /* slate-900 */
+        color: #f8fafc; /* slate-50 */
+        font-family: 'Inter', sans-serif;
+      }
+      h1, h2, h3, h4, h5, h6 {
+        font-family: 'Teko', sans-serif;
+        letter-spacing: 0.05em;
+      }
+      @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      .fade-in {
+        animation: fadeIn 0.4s ease-in-out forwards;
+      }
+       @keyframes fadeInDown {
+        from { opacity: 0; transform: translateY(-10px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      .fade-in-down {
+        animation: fadeInDown 0.2s ease-out forwards;
+      }
+      @keyframes target-pulse {
+        0% { box-shadow: inset 0 0 0 2px rgba(239, 68, 68, 0.8); }
+        50% { box-shadow: inset 0 0 0 2px rgba(239, 68, 68, 0.8); }
+        100% { box-shadow: inset 0 0 0 2px rgba(239, 68, 68, 0); }
+      }
+      .cell-targeted {
+        animation: target-pulse 0.7s ease-out;
+      }
+      @keyframes grid-glow {
+          0%, 100% { box-shadow: 0 0 8px #06b6d4, 0 0 16px #06b6d4, 0 0 24px #0891b2; }
+          50% { box-shadow: 0 0 16px #0891b2, 0 0 32px #0891b2, 0 0 48px #0e7490; }
+      }
+      .grid-active-turn {
+          border-radius: 1rem; /* rounded-xl */
+          animation: grid-glow 2.5s infinite ease-in-out;
+          border: 1px solid #0891b2;
+      }
+      @keyframes ship-active-glow {
+          0%, 100% { box-shadow: 0 0 8px #facc15, 0 0 16px #facc15; }
+          50% { box-shadow: 0 0 16px #f59e0b, 0 0 32px #f59e0b; }
+      }
+      .ship-active-glow {
+          animation: ship-active-glow 2s infinite ease-in-out;
+      }
+      @keyframes action-panel-throb {
+          0%, 100% {
+              transform: scale(1);
+              box-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
+          }
+          50% {
+              transform: scale(1.01);
+              box-shadow: 0 0 20px rgba(56, 189, 248, 0.7);
+          }
+      }
+      .action-panel-throb {
+          animation: action-panel-throb 2.5s infinite ease-in-out;
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.27.0",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/"
+  }
+}
+</script>
+</head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>

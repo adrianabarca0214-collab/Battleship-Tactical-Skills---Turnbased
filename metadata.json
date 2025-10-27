@@ -1,0 +1,5 @@
+{
+  "name": "Tactical Battleship: Turnbased 2",
+  "description": "A multiplayer Battleship game for up to 4 players, featuring a simulated real-time connection for cross-device play and an AI opponent powered by the Gemini API. Plan your strategy, place your fleet, and obliterate your opponents in this modern take on the classic naval combat game.",
+  "requestFramePermissions": []
+}
